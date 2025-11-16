@@ -11,7 +11,7 @@ pub fn all_interpretations(solution: BDDFunction) -> Table {
     res.load_preset(presets::NOTHING);
     let mut current_row = Row::new();
     let mut idx = 0;
-    for_all_true_interpretations(solution, BitVec::new(), &mut |interpretation| {
+    for_all_true_interpretations(solution, |interpretation| {
         if idx < RESULT_TABLE_WIDTH {
             current_row.add_cell(Cell::new(interpretation_to_table(interpretation)));
             idx += 1;
@@ -57,31 +57,30 @@ fn interpretation_to_table(interpretation: BitVec) -> Table {
     res
 }
 
-fn for_all_true_interpretations(
-    solution: BDDFunction,
-    mut accumulator: BitVec,
-    action: &mut impl FnMut(BitVec),
-) {
-    if let Some((t, f)) = solution.cofactors() {
-        match (t.satisfiable(), f.satisfiable()) {
-            (true, true) => {
-                let mut another = accumulator.clone();
-                accumulator.push(true);
-                another.push(false);
-                for_all_true_interpretations(t, accumulator, action);
-                for_all_true_interpretations(f, another, action);
+fn for_all_true_interpretations(solution: BDDFunction, mut action: impl FnMut(BitVec)) {
+    let mut stack = vec![(solution, BitVec::new())];
+    while let Some((fun, mut acc)) = stack.pop() {
+        if let Some((t, f)) = fun.cofactors() {
+            match (t.satisfiable(), f.satisfiable()) {
+                (true, true) => {
+                    let mut another = acc.clone();
+                    acc.push(true);
+                    another.push(false);
+                    stack.push((f, another));
+                    stack.push((t, acc));
+                }
+                (true, false) => {
+                    acc.push(true);
+                    stack.push((t, acc));
+                }
+                (false, true) => {
+                    acc.push(false);
+                    stack.push((f, acc));
+                }
+                (false, false) => (),
             }
-            (true, false) => {
-                accumulator.push(true);
-                for_all_true_interpretations(t, accumulator, action);
-            }
-            (false, true) => {
-                accumulator.push(false);
-                for_all_true_interpretations(f, accumulator, action);
-            }
-            (false, false) => (),
+        } else {
+            action(acc)
         }
-    } else {
-        action(accumulator)
     }
 }
