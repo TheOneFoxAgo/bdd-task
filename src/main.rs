@@ -1,13 +1,14 @@
 mod conditions;
 mod config;
 mod neighbours;
+mod output;
 use std::io::Read;
 
 use anyhow::{Context, Result, bail};
 use oxidd::{
     BooleanFunction, Manager, ManagerRef,
     bdd::{BDDFunction, BDDManagerRef, new_manager},
-    util::{AllocResult, OptBool, Rng, SatCountCache, num::F64},
+    util::{AllocResult, num::F64},
 };
 
 use crate::config::Config;
@@ -22,7 +23,7 @@ const THREADS: u32 = 16;
 
 const VARIABLES_AMOUNT: u32 = (M * M_LENGTH * N) as u32;
 
-type Cache = SatCountCache<F64, std::hash::RandomState>;
+const RESULT_TABLE_WIDTH: usize = 5;
 
 fn main() -> Result<()> {
     let manager_ref = new_manager(INNER_NODES, CACHE, THREADS);
@@ -38,12 +39,13 @@ fn main() -> Result<()> {
     println!("Без склейки");
     let mut solution_without_wrap =
         solve_einstein(manager_ref.clone(), &variables, &config, false)?;
-    let mut cache: Cache = Default::default();
-    // Печатаем количество решений
-    print_solution_info(&solution_without_wrap, &mut cache);
+
+    // Печатаем решения, если требуется
     if config.print_solutions {
-        // Печатаем случайную истинную интерпретацию
-        print_random_interpretation(&solution_without_wrap, &mut cache)?
+        println!(
+            "Все решения:\n{}",
+            output::all_interpretations(solution_without_wrap.clone())
+        );
     } else {
         // Дальше решение не пригодится. Стираем его.
         manager_ref.with_manager_shared(|m| {
@@ -54,17 +56,19 @@ fn main() -> Result<()> {
 
     println!("\nСо склейкой");
     let solution_with_wrap = solve_einstein(manager_ref.clone(), &variables, &config, true)?;
-    manager_ref.with_manager_shared(|m| cache.clear_if_invalid(m, VARIABLES_AMOUNT));
-    print_solution_info(&solution_with_wrap, &mut cache);
+
+    // Печатаем новые решения, которые добавились в резульате склейки, если требуется
     if config.print_solutions {
         // "Вычитаем" решения без склейки, чтобы получить только те,
         // в которых склейка есть
-        print_random_interpretation(
-            &solution_without_wrap
-                .not_owned()?
-                .and(&solution_with_wrap)?,
-            &mut cache,
-        )?
+        println!(
+            "Все новые решения:\n{}",
+            output::all_interpretations(
+                solution_without_wrap
+                    .not_owned()?
+                    .and(&solution_with_wrap)?,
+            )
+        );
     }
     Ok(())
 }
@@ -121,44 +125,11 @@ fn solve_einstein(
             }
         }
     }
+    let model = b.model();
+    let solutions_amount = model
+        .sat_count::<F64, std::hash::RandomState>(VARIABLES_AMOUNT, &mut Default::default())
+        .0;
+    println!("Количество решений: {solutions_amount}");
 
-    Ok(b.model())
-}
-
-fn print_solution_info(solution: &BDDFunction, cache: &mut Cache) {
-    let solutions_amount =
-        solution.sat_count::<F64, std::hash::RandomState>(VARIABLES_AMOUNT, cache);
-    println!("Количество решений: {}", solutions_amount.0);
-}
-
-fn print_random_interpretation(solution: &BDDFunction, cache: &mut Cache) -> Result<()> {
-    let mut interpretation = solution
-        .pick_cube_uniform::<std::hash::RandomState>(cache, &mut Rng::new_seed(0))
-        .context("No solution")?
-        .into_iter()
-        .map(|r| match r {
-            OptBool::None => false,
-            OptBool::False => false,
-            OptBool::True => true,
-        });
-    println!("Решение:");
-    for position in 0..N {
-        print!("{position}: ");
-        for kind in 0..M {
-            let mut value = 0;
-            for i in (&mut interpretation).take(M_LENGTH) {
-                value <<= 1;
-                if i {
-                    value |= 1;
-                }
-            }
-            print!("{value}");
-            if kind != M - 1 {
-                print!(", ")
-            } else {
-                println!()
-            }
-        }
-    }
-    Ok(())
+    Ok(model)
 }
