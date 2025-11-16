@@ -23,8 +23,6 @@ const THREADS: u32 = 16;
 
 const VARIABLES_AMOUNT: u32 = (M * M_LENGTH * N) as u32;
 
-const RESULT_TABLE_WIDTH: usize = 5;
-
 fn main() -> Result<()> {
     let manager_ref = new_manager(INNER_NODES, CACHE, THREADS);
     let variables: Vec<BDDFunction> = manager_ref.with_manager_exclusive(|manager| {
@@ -44,7 +42,7 @@ fn main() -> Result<()> {
     if config.print_solutions {
         println!(
             "Все решения:\n{}",
-            output::all_interpretations(solution_without_wrap.clone())
+            output::all_interpretations(solution_without_wrap.clone(), config.result_table_width)
         );
     } else {
         // Дальше решение не пригодится. Стираем его.
@@ -67,6 +65,7 @@ fn main() -> Result<()> {
                 solution_without_wrap
                     .not_owned()?
                     .and(&solution_with_wrap)?,
+                config.result_table_width
             )
         );
     }

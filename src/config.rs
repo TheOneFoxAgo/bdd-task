@@ -9,6 +9,7 @@ pub struct Config {
     pub forth: Vec<(usize, usize, usize, usize)>,
     pub order: Vec<usize>,
     pub print_solutions: bool,
+    pub result_table_width: usize,
 }
 
 #[derive(Deserialize)]
